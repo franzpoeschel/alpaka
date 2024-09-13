@@ -87,6 +87,7 @@ public:
 
             [adios2.engine.parameters]
             MarshalMethod = "bp"
+            QueueFullPolicy = "discard"
         )");
         m_series.setMeshesPath("images");
     }
