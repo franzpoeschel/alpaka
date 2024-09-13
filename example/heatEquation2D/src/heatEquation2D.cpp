@@ -8,16 +8,156 @@
 #include "StencilKernel.hpp"
 #include "analyticalSolution.hpp"
 
+#include <alpaka/mem/view/Traits.hpp>
+
+#include <openPMD/Dataset.hpp>
+#include <openPMD/Iteration.hpp>
+#include <openPMD/auxiliary/UniquePtr.hpp>
+
+
 #ifdef PNGWRITER_ENABLED
 #    include "writeImage.hpp"
+#endif
+#ifdef OPENPMD_ENABLED
+#    include <openPMD/openPMD.hpp>
 #endif
 
 #include <alpaka/alpaka.hpp>
 #include <alpaka/example/ExecuteForEachAccTag.hpp>
 
+#include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+
+#ifdef OPENPMD_ENABLED
+struct OpenPMDOutput
+{
+private:
+    openPMD::Series m_series;
+
+    template<typename Buffer>
+    static auto paddedMemoryExtent(Buffer const& buffer) -> alpaka::Vec<alpaka::Dim<Buffer>, alpaka::Idx<Buffer>>
+    {
+        // Initialize with logical extent.
+        // It has the right number of entries, and also the correct entry
+        // for the first (the slowest) dimension as that is not padded.
+        auto result = alpaka::getExtents(buffer);
+        auto const pitches = alpaka::getPitchesInBytes(buffer);
+
+        auto extent_it = result.begin();
+        auto extent_end = result.end();
+        auto pitch_it = pitches.begin();
+        auto pitch_end = pitches.end();
+
+        auto previous_pitch = *pitch_it++;
+        ++extent_it;
+
+        for(; pitch_it != pitch_end; ++extent_it, ++pitch_it)
+        {
+            if(previous_pitch % *pitch_it != 0)
+            {
+                throw std::runtime_error("No specification of memory selection possible.");
+            }
+            *extent_it = previous_pitch / *pitch_it;
+            previous_pitch = *pitch_it;
+        }
+        return result;
+    }
+
+    template<typename Vec>
+    static auto asOpenPMDExtent(Vec const& vec) -> openPMD::Extent
+    {
+        return openPMD::Extent{vec.begin(), vec.end()};
+    }
+
+    template<typename Buffer>
+    using AsUniquePtr = openPMD::UniquePtrWithLambda<
+        std::remove_cv_t<std::remove_reference_t<decltype(*std::declval<Buffer>().data())>>>;
+
+public:
+    void init()
+    {
+        m_series = openPMD::Series("heat.sst", openPMD::Access::CREATE, R"(
+            iteration_encoding = "variable_based"
+
+            [adios2.engine.parameters]
+            MarshalMethod = "bp"
+        )");
+        m_series.setMeshesPath("images");
+    }
+
+    template<typename HostBuffer, typename AccBuffer, typename DumpQueue, typename DevAcc>
+    void writeIteration(
+        openPMD::Iteration::IterationIndex_t step,
+        HostBuffer& hostBuffer,
+        AccBuffer& accBuffer,
+        DumpQueue& dumpQueue,
+        DevAcc& devAcc)
+    {
+        using value_t = double;
+
+        openPMD::Iteration current_iteration = m_series.writeIterations()[step];
+        current_iteration.setTime(1.0);
+        openPMD::Mesh image = current_iteration.meshes["heat"];
+
+        image.setAxisLabels({"x", "y"});
+        image.setGridGlobalOffset({0., 0.});
+        image.setGridSpacing(std::vector<double>{1., 1.});
+        image.setGridUnitSI(1.0);
+        image.setPosition(std::vector<double>{0.5, 0.5});
+        image.setUnitDimension({{openPMD::UnitDimension::theta, 1.0}});
+        image.setUnitSI(1.0);
+
+        auto logical_extents = alpaka::getExtents(accBuffer);
+        image.resetDataset({openPMD::determineDatatype<value_t>(), asOpenPMDExtent(logical_extents)});
+
+        constexpr bool direct_gpu = false;
+        if constexpr(direct_gpu)
+        {
+            auto physicalExtent = paddedMemoryExtent(accBuffer);
+            image.prepareLoadStore()
+                .withRawPtr(accBuffer.data())
+                // device extent with padding
+                .memorySelection({{0, 0}, asOpenPMDExtent(physicalExtent)})
+                .store(openPMD::EnqueuePolicy::Defer);
+        }
+        else
+        {
+            alpaka::memcpy(dumpQueue, hostBuffer, accBuffer);
+            alpaka::wait(dumpQueue);
+            image.storeChunkRaw(hostBuffer.data(), {0, 0}, asOpenPMDExtent(logical_extents));
+        }
+
+        current_iteration.close();
+    }
+
+    void close()
+    {
+        m_series.close();
+    }
+};
+#else
+struct OpenPMDOutput
+{
+    void init()
+    {
+    }
+
+    template<typename... Args>
+    void writeIteration(Args&&...)
+    {
+    }
+
+    void close()
+    {
+    }
+};
+#endif
 
 //! Each kernel computes the next step for one point.
 //! Therefore the number of threads should be equal to numNodesX.
@@ -143,6 +283,9 @@ auto example(TAccTag const&) -> int
 
     alpaka::WorkDivMembers<Dim, Idx> workDiv{numChunks, threadsPerBlock, elemPerThread};
 
+    OpenPMDOutput openPMDOutput;
+    openPMDOutput.init();
+
     // Simulate
     for(uint32_t step = 1; step <= numTimeSteps; ++step)
     {
@@ -168,8 +311,10 @@ auto example(TAccTag const&) -> int
             dy,
             dt);
 
+        openPMDOutput.writeIteration(step, uBufHost, uCurrBufAcc, dumpQueue, devAcc);
+
 #ifdef PNGWRITER_ENABLED
-        if((step - 1) % 100 == 0)
+        // if((step - 1) % 100 == 0)
         {
             alpaka::memcpy(dumpQueue, uBufHost, uCurrBufAcc);
             alpaka::wait(dumpQueue);
@@ -181,6 +326,7 @@ auto example(TAccTag const&) -> int
         std::swap(uNextBufAcc, uCurrBufAcc);
     }
 
+    openPMDOutput.close();
 
     // Copy device -> host
     alpaka::wait(computeQueue);
