@@ -31,6 +31,14 @@ else()
   set(PNGWRITER_ENABLED False)
 endif()
 
+find_package(openPMD 0.15.2)
+
+if(openPMD_FOUND)
+    set(OPENPMD_ENABLED True)
+else()
+    set(OPENPMD_ENABLED False)
+endif()
+
 #-------------------------------------------------------------------------------
 # Find alpaka.
 
@@ -60,6 +68,13 @@ if(PNGwriter_FOUND)
         ${_TARGET_NAME}
         PRIVATE PNGwriter::PNGwriter)
     target_compile_definitions(${_TARGET_NAME} PRIVATE PNGWRITER_ENABLED)
+endif()
+if(openPMD_FOUND)
+    target_link_libraries(
+        ${_TARGET_NAME}
+        PRIVATE openPMD::openPMD
+    )
+    target_compile_definitions(${_TARGET_NAME} PRIVATE OPENPMD_ENABLED)
 endif()
 
 set_target_properties(${_TARGET_NAME} PROPERTIES FOLDER example)
