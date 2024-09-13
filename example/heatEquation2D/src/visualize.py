@@ -47,7 +47,7 @@ def show_iteration(iteration, figure_settings):
     iteration.close()
 
     # contourf prints the axes in reverse order, counteract this
-    data = data.T
+    data = heat.unit_SI * data.T
 
     # Stick with the color map from the first image by fixing vmin and vmax
     if figure_settings.vmin is None or figure_settings.vmax is None:
@@ -65,20 +65,25 @@ def show_iteration(iteration, figure_settings):
         ticks = np.fromiter((offset + spacing * i for i in range(heat.shape[dim])), dtype=type(offset))
         return ticks
 
-    plt.contourf(
-        get_coordinates(0),
-        get_coordinates(1),
-        data * heat.unit_SI,
-        cmap=plt.cm.jet,
+    def get_offset(dim):
+        return heat.grid_global_offset[dim] * heat.grid_unit_SI
+
+    def get_extent(dim):
+        spacing = heat.grid_spacing[dim] * heat.grid_unit_SI
+        extent = heat.shape[dim] * spacing
+        return extent
+
+    plt.imshow(
+        data,
+        cmap=plt.cm.inferno,
         vmin=figure_settings.vmin,
         vmax=figure_settings.vmax,
+        extent=(get_offset(0), get_extent(0), get_offset(1), get_extent(1)),
     )
-    if figure_settings.colorbar:
-        figure_settings.colorbar.remove()
     figure_settings.colorbar = plt.colorbar()
 
     figure_settings.display_id.update(plt.gcf())
-    plt.pause(0.1)
+    # plt.pause(0.1)
 
 
 class FigureSettings:
@@ -100,6 +105,7 @@ def main(filename):
 
     for iteration in s.read_iterations():
         show_iteration(iteration, figure_settings)
+    s.close()
 
 
 if __name__ == "__main__":
