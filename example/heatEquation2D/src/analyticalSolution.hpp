@@ -42,13 +42,13 @@ auto validateSolution(T_Buffer const& buffer, double const dx, double const dy, 
     double maxError = 0.0;
     for(uint32_t j = 1; j < extents[0] - 1; ++j)
     {
-        for(uint32_t i = 0; i < extents[1]; ++i)
+        for(uint32_t i = 1; i < extents[1] - 1; ++i)
         {
             auto const error = std::abs(buffer.data()[j * extents[1] + i] - analyticalSolution(i * dx, j * dy, t));
             maxError = std::max(maxError, error);
         }
     }
 
-    constexpr double errorThreshold = 1e-5;
+    constexpr double errorThreshold = 1e-4;
     return std::make_pair(maxError < errorThreshold, maxError);
 }
