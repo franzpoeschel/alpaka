@@ -10,10 +10,6 @@
 
 #include <alpaka/mem/view/Traits.hpp>
 
-#include <openPMD/Dataset.hpp>
-#include <openPMD/Iteration.hpp>
-#include <openPMD/auxiliary/UniquePtr.hpp>
-
 
 #ifdef PNGWRITER_ENABLED
 #    include "writeImage.hpp"
