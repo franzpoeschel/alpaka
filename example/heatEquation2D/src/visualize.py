@@ -54,7 +54,11 @@ def show_iteration(iteration, figure_settings):
         figure_settings.vmin = data.min()
         figure_settings.vmax = data.max()
 
-    plt.title("Heat at step {} [{}]".format(str(iteration.iteration_index), print_unitdimension(heat.unit_dimension)))
+    plt.title(
+        "Heat at step {} [{}]".format(
+            str(iteration.iteration_index), print_unitdimension(heat.unit_dimension)
+        )
+    )
     plt.xlabel(heat.axis_labels[0])
     plt.ylabel(heat.axis_labels[1])
 
@@ -62,7 +66,9 @@ def show_iteration(iteration, figure_settings):
         offset = heat.grid_global_offset[dim] * heat.grid_unit_SI
         spacing = heat.grid_spacing[dim]
         spacing *= heat.grid_unit_SI
-        ticks = np.fromiter((offset + spacing * i for i in range(heat.shape[dim])), dtype=type(offset))
+        ticks = np.fromiter(
+            (offset + spacing * i for i in range(heat.shape[dim])), dtype=type(offset)
+        )
         return ticks
 
     def get_offset(dim):
@@ -94,8 +100,12 @@ class FigureSettings:
         self.display_id = display_id
 
 
-def main(filename):
-    s = opmd.Series(filename, opmd.Access.read_linear, "defer_iteration_parsing = true")
+def main(filename, config=""):
+    s = opmd.Series(
+        filename,
+        opmd.Access.read_linear,
+        opmd.merge_json("defer_iteration_parsing = true", config),
+    )
 
     # interactive off
     plt.ioff()
