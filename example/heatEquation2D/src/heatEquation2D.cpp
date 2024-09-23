@@ -307,11 +307,13 @@ auto example(TAccTag const&) -> int
             dx,
             dy,
             dt);
-
-        openPMDOutput.writeIteration(step, uBufHost, uCurrBufAcc, dumpQueue, devAcc);
+        if((step - 1) % 10 == 0)
+        {
+            openPMDOutput.writeIteration(step, uBufHost, uCurrBufAcc, dumpQueue, devAcc);
+        }
 
 #ifdef PNGWRITER_ENABLED
-        // if((step - 1) % 100 == 0)
+        if((step - 1) % 100 == 0)
         {
             alpaka::wait(computeQueue);
             alpaka::memcpy(dumpQueue, uBufHost, uCurrBufAcc);
