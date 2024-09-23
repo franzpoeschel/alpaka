@@ -78,13 +78,10 @@ private:
 public:
     void init()
     {
-        m_series = openPMD::Series("heat.sst", openPMD::Access::CREATE, R"(
-            iteration_encoding = "variable_based"
-
-            [adios2.engine.parameters]
-            MarshalMethod = "bp"
-            QueueFullPolicy = "discard"
-        )");
+        m_series = openPMD::Series(
+            "heat.%E",
+            openPMD::Access::CREATE,
+            "@../example/heatEquation2D/src/openpmd_config.toml");
         m_series.setMeshesPath("images");
     }
 

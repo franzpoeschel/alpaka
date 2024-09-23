@@ -1,0 +1,12 @@
+iteration_encoding = "variable_based"
+backend = "adios2"
+
+[adios2.engine.parameters]
+MarshalMethod = "bp"
+QueueFullPolicy = "discard"
+StatsLevel = 1
+
+[[adios2.dataset.operators]]
+type = "blosc"
+parameters.clevel = 5
+parameters.doshuffle = "BLOSC_BITSHUFFLE"
