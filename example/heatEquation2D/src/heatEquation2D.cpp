@@ -36,44 +36,11 @@ struct OpenPMDOutput
 private:
     openPMD::Series m_series;
 
-    template<typename Buffer>
-    static auto paddedMemoryExtent(Buffer const& buffer) -> alpaka::Vec<alpaka::Dim<Buffer>, alpaka::Idx<Buffer>>
-    {
-        // Initialize with logical extent.
-        // It has the right number of entries, and also the correct entry
-        // for the first (the slowest) dimension as that is not padded.
-        auto result = alpaka::getExtents(buffer);
-        auto const pitches = alpaka::getPitchesInBytes(buffer);
-
-        auto extent_it = result.begin();
-        auto extent_end = result.end();
-        auto pitch_it = pitches.begin();
-        auto pitch_end = pitches.end();
-
-        auto previous_pitch = *pitch_it++;
-        ++extent_it;
-
-        for(; pitch_it != pitch_end; ++extent_it, ++pitch_it)
-        {
-            if(previous_pitch % *pitch_it != 0)
-            {
-                throw std::runtime_error("No specification of memory selection possible.");
-            }
-            *extent_it = previous_pitch / *pitch_it;
-            previous_pitch = *pitch_it;
-        }
-        return result;
-    }
-
     template<typename Vec>
     static auto asOpenPMDExtent(Vec const& vec) -> openPMD::Extent
     {
         return openPMD::Extent{vec.begin(), vec.end()};
     }
-
-    template<typename Buffer>
-    using AsUniquePtr = openPMD::UniquePtrWithLambda<
-        std::remove_cv_t<std::remove_reference_t<decltype(*std::declval<Buffer>().data())>>>;
 
 public:
     void init()
@@ -110,22 +77,9 @@ public:
         auto logical_extents = alpaka::getExtents(accBuffer);
         image.resetDataset({openPMD::determineDatatype<value_t>(), asOpenPMDExtent(logical_extents)});
 
-        constexpr bool direct_gpu = false;
-        if constexpr(direct_gpu)
-        {
-            auto physicalExtent = paddedMemoryExtent(accBuffer);
-            image.prepareLoadStore()
-                .withRawPtr(accBuffer.data())
-                // device extent with padding
-                .memorySelection({{0, 0}, asOpenPMDExtent(physicalExtent)})
-                .store(openPMD::EnqueuePolicy::Defer);
-        }
-        else
-        {
-            alpaka::memcpy(dumpQueue, hostBuffer, accBuffer);
-            alpaka::wait(dumpQueue);
-            image.storeChunkRaw(hostBuffer.data(), {0, 0}, asOpenPMDExtent(logical_extents));
-        }
+        alpaka::memcpy(dumpQueue, hostBuffer, accBuffer);
+        alpaka::wait(dumpQueue);
+        image.storeChunkRaw(hostBuffer.data(), {0, 0}, asOpenPMDExtent(logical_extents));
 
         current_iteration.close();
     }
@@ -168,6 +122,11 @@ struct OpenPMDOutput
 template<typename TAccTag>
 auto example(TAccTag const&) -> int
 {
+    if constexpr(std::is_same_v<TAccTag, alpaka::TagCpuSerial>)
+    {
+        return EXIT_SUCCESS;
+    }
+
     // Set Dim and Idx type
     using Dim = alpaka::DimInt<2u>;
     using Idx = uint32_t;
